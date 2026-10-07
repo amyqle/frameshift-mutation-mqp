@@ -1,0 +1,19 @@
+# Large Ensembl/raw data
+data/*.gtf
+data/*.gtf.gz
+data/*.fa
+data/*.fa.gz
+data/*.fa.bgz
+
+# Generated data files
+data/*.csv
+data/*.txt
+
+# Mac system files
+.DS_Store
+
+# Python environment
+.venv/
+
+# R history
+.Rhistory
