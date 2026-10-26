@@ -108,13 +108,10 @@ with open(input_file, "r") as f:
 
 
 # --------------------------------------------------
-# Pilot: first 10 + last 10 genes
+# Full dataset: all validated genes
 # --------------------------------------------------
 
-selected_genes = (
-    genes[:10] +
-    genes[-10:]
-)
+selected_genes = genes
 
 
 # --------------------------------------------------
@@ -287,7 +284,7 @@ with open(output_file, "w", newline="") as f:
 # --------------------------------------------------
 
 print(
-    f"Pilot genes used: "
+    f"Genes modeled: "
     f"{len(selected_genes)}"
 )
 
