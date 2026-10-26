@@ -18,7 +18,7 @@ from Bio.Seq import Seq
 
 
 # Project folders
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 
 GENE_CSV = DATA / "genes_with_cds.csv"

@@ -1,6 +1,19 @@
 # Frameshift Mutation Project Coding Book
 
-## filter_genes.py
+Run scripts from the project folder. `python scripts/run_pipeline.py` builds the reference dataset.
+
+## Script groups
+
+- `scripts/dataset/`: the six reference dataset steps.
+- `scripts/validation/`: CDS translation checks and mismatch investigation.
+- `scripts/models/`: model sequences, insertion, deletion/ATG and retained-intron models.
+- `scripts/analysis/`: sequence statistics, model summaries and graphs.
+- `scripts/experiments/`: exploratory filtering, deletion and mutation-position runs.
+
+The numbered notes below describe the original dataset and analysis scripts.
+
+
+## scripts/experiments/filter_genes.py
 
 **Purpose:**  
 Finds protein-coding genes in the Ensembl GTF file.
@@ -25,7 +38,7 @@ This was our first test to confirm we could successfully filter the Ensembl anno
 
 ---
 
-## 1. make_gene_csv.py
+## 1. scripts/dataset/make_gene_csv.py
 
 **Purpose:**  
 Creates a CSV of protein-coding genes from the Ensembl GTF file.
@@ -45,7 +58,7 @@ Creates a CSV of protein-coding genes from the Ensembl GTF file.
 
 ---
 
-## 2. add_canonical_transcripts.py
+## 2. scripts/dataset/add_canonical_transcripts.py
 
 **Purpose:**  
 Adds the canonical transcript for each protein-coding gene.
@@ -62,7 +75,7 @@ Adds the canonical transcript for each protein-coding gene.
 
 ---
 
-## 3. add_cdna_sequences.py
+## 3. scripts/dataset/add_cdna_sequences.py
 
 **Purpose:**  
 Matches each canonical transcript to its cDNA sequence.
@@ -79,7 +92,7 @@ Matches each canonical transcript to its cDNA sequence.
 
 ---
 
-## 4. add_protein_sequences.py
+## 4. scripts/dataset/add_protein_sequences.py
 
 **Purpose:**  
 Matches each canonical transcript to its protein sequence.
@@ -96,7 +109,7 @@ Matches each canonical transcript to its protein sequence.
 
 ---
 
-## 5. add_genomic_sequences.py
+## 5. scripts/dataset/add_genomic_sequences.py
 
 **Purpose:**  
 Extracts the genomic DNA sequence for each gene.
@@ -113,7 +126,7 @@ Extracts the genomic DNA sequence for each gene.
 
 ---
 
-## 6. make_histograms.py
+## 6. scripts/analysis/make_histograms.py
 
 **Purpose:**  
 Creates histograms of:
@@ -131,7 +144,7 @@ Creates histograms of:
 
 ---
 
-## 7. basic_statistics.py
+## 7. scripts/analysis/basic_statistics.py
 
 **Purpose:**  
 Calculates basic statistics for sequence lengths.
@@ -149,7 +162,7 @@ Calculates basic statistics for sequence lengths.
 
 ---
 
-## 8. extract_cds_sequences.py
+## 8. scripts/dataset/extract_cds_sequences.py
 
 **Purpose:**  
 Extracts the coding sequence, or CDS, for each canonical transcript.
@@ -166,7 +179,7 @@ Extracts the coding sequence, or CDS, for each canonical transcript.
 
 ---
 
-## 9. analyze_codons.py
+## 9. scripts/analysis/analyze_codons.py
 
 **Purpose:**  
 Analyzes annotated start and stop codons from the GTF file.
@@ -187,7 +200,7 @@ Analyzes annotated start and stop codons from the GTF file.
 
 ---
 
-## 10. make_codon_charts.py
+## 10. scripts/analysis/make_codon_charts.py
 
 **Purpose:**  
 Creates charts showing the start and stop codon distributions.
@@ -200,30 +213,21 @@ Creates charts showing the start and stop codon distributions.
 
 # Pipeline Order
 
-1. `make_gene_csv.py`
-2. `add_canonical_transcripts.py`
-3. `add_cdna_sequences.py`
-4. `add_protein_sequences.py`
-5. `add_genomic_sequences.py`
-6. `make_histograms.py`
-7. `basic_statistics.py`
-8. `extract_cds_sequences.py`
-9. `analyze_codons.py`
-10. `make_codon_charts.py`
+1. `scripts/dataset/make_gene_csv.py`
+2. `scripts/dataset/add_canonical_transcripts.py`
+3. `scripts/dataset/add_cdna_sequences.py`
+4. `scripts/dataset/add_protein_sequences.py`
+5. `scripts/dataset/add_genomic_sequences.py`
+6. `scripts/analysis/make_histograms.py`
+7. `scripts/analysis/basic_statistics.py`
+8. `scripts/dataset/extract_cds_sequences.py`
+9. `scripts/analysis/analyze_codons.py`
+10. `scripts/analysis/make_codon_charts.py`
 
 # Current Status
 
-Completed:
-- Reference gene dataset
-- Canonical transcript matching
-- cDNA matching
-- Protein matching
-- Genomic sequence extraction
-- Sequence-length analysis
-- CDS extraction
-- Start/stop codon analysis
+The repository includes reference dataset generation, CDS translation validation,
+mismatch investigation, frameshift models and analysis scripts. Generated CSVs stay in `data/`.
+Check the local output files for the results of each run.
 
-Next:
-- Validate CDS translation
-- Simulate frameshift mutations
-- Compare reference and mutated proteins
+The next review is to investigate validation mismatches and check the model assumptions.

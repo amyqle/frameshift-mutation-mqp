@@ -25,6 +25,22 @@ data/
 
 The data files are stored locally and are not included in this repository.
 
+## Project folders
+
+```text
+scripts/
+  run_pipeline.py  # Build the reference CSVs
+  dataset/         # Prepare genes and sequences
+  validation/      # Check CDS translations and mismatches
+  models/          # Build model inputs and simulate frameshifts
+  analysis/        # Statistics and graphs
+  experiments/     # Initial filtering and deletion/position experiments
+data/              # Local input files and generated CSVs
+figures/           # Saved graphs
+```
+
+Run commands from the project folder, not from inside a script subfolder.
+
 ## Build the CSV files
 
 Run this from the project folder:
@@ -46,8 +62,20 @@ Install the analysis libraries, then run:
 
 ```powershell
 python -m pip install -r requirements.txt
-python scripts/basic_statistics.py
-python scripts/make_histograms.py
-python scripts/analyze_codons.py
-python scripts/make_codon_charts.py
+python scripts/analysis/basic_statistics.py
+python scripts/analysis/make_histograms.py
+python scripts/analysis/analyze_codons.py
+python scripts/analysis/make_codon_charts.py
 ```
+
+## Validation and simple model
+
+After building the reference CSVs, run all four steps with:
+
+```powershell
+python scripts/run_pipeline.py --simple-model
+```
+
+This validates CDS translations, builds the model inputs, runs the insertion model and prints the results summary. It stops if a step fails. Results are saved in `data/`; rerunning replaces these generated files.
+
+See [CODING_BOOK.md](CODING_BOOK.md) for the script notes.
