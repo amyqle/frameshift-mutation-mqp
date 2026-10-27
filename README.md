@@ -79,3 +79,27 @@ python scripts/run_pipeline.py --simple-model
 This validates CDS translations, builds the model inputs, runs the insertion model and prints the results summary. It stops if a step fails. Results are saved in `data/`; rerunning replaces these generated files.
 
 See [CODING_BOOK.md](CODING_BOOK.md) for the script notes.
+
+## First-intron comparison
+
+After building the reference CSVs, running validation and building the simple-model sequences, run:
+
+```powershell
+python scripts/models/test_intron_retained_model.py
+```
+
+We keep the first intron and use the same genes, insertions and coding positions as the simple insertion model. The results include the unchanged sequences so we can see what changed before and after the insertion.
+
+Results, controls, skipped transcripts and a grouped summary are saved as `data/first_intron_retained_*.csv`. Transcripts without a first intron, or with that intron before the coding start, are marked separately. An incomplete coding sequence is flagged rather than silently treated as complete.
+
+For a short check, add `--limit 20 --output-prefix first_intron_pilot`. Install the packages in `requirements.txt` first. The comparison uses the existing standard-code translation rules; it does not establish protein function.
+
+To make the comparison graphs:
+
+```powershell
+python scripts/analysis/make_first_intron_comparison_chart.py
+```
+
+The graphs are saved in `figures/`.
+
+Use the `simple_*` columns in the comparison results for a matched comparison. Skipped transcripts are listed separately and excluded from both sides.
