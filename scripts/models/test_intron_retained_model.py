@@ -1,57 +1,120 @@
-
 import csv
 import gzip
-import sys
 from pathlib import Path
-
-limit = sys.maxsize
-
-while True:
-    try:
-        csv.field_size_limit(limit)
-        break
-    except OverflowError:
-        limit //= 10
 
 from Bio import SeqIO
 from Bio.Seq import Seq
 
 
-# Project folders
+# --------------------------------------------------
+# File paths and settings
+# --------------------------------------------------
+
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 
-GENE_CSV = DATA / "genes_with_cds.csv"
+GENES_FILE = DATA / "genes_with_cds.csv"
+VALIDATION_FILE = DATA / "cds_translation_validation.csv"
 GTF_FILE = DATA / "genes.gtf"
 GENOME_FILE = DATA / "unmasked.fa.bgz"
 
-OUTPUT_FILE = DATA / "intron_retained_model_results.csv"
+OUTPUT_FILE = DATA / "first_intron_retained_results.csv"
 
 TEST_LIMIT = 20
 DELETION_SIZES = [1, 2]
 
+csv.field_size_limit(10_000_000)
 
-def find_column(columns, possible_names):
-    """Find a column even if its name differs slightly."""
-    lookup = {c.lower().strip(): c for c in columns}
 
-    for name in possible_names:
-        if name.lower() in lookup:
-            return lookup[name.lower()]
+# --------------------------------------------------
+# Translation
+# --------------------------------------------------
 
-    return None
+codon_table = {
+    "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L",
+    "TCT": "S", "TCC": "S", "TCA": "S", "TCG": "S",
+    "TAT": "Y", "TAC": "Y", "TAA": "*", "TAG": "*",
+    "TGT": "C", "TGC": "C", "TGA": "*", "TGG": "W",
+    "CTT": "L", "CTC": "L", "CTA": "L", "CTG": "L",
+    "CCT": "P", "CCC": "P", "CCA": "P", "CCG": "P",
+    "CAT": "H", "CAC": "H", "CAA": "Q", "CAG": "Q",
+    "CGT": "R", "CGC": "R", "CGA": "R", "CGG": "R",
+    "ATT": "I", "ATC": "I", "ATA": "I", "ATG": "M",
+    "ACT": "T", "ACC": "T", "ACA": "T", "ACG": "T",
+    "AAT": "N", "AAC": "N", "AAA": "K", "AAG": "K",
+    "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
+    "GTT": "V", "GTC": "V", "GTA": "V", "GTG": "V",
+    "GCT": "A", "GCC": "A", "GCA": "A", "GCG": "A",
+    "GAT": "D", "GAC": "D", "GAA": "E", "GAG": "E",
+    "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G"
+}
+
+
+def translate(sequence):
+    protein = ""
+    stop_position = None
+
+    for i in range(0, len(sequence) - 2, 3):
+        codon = sequence[i:i + 3].upper()
+        amino_acid = codon_table.get(codon, "X")
+
+        if amino_acid == "*":
+            stop_position = (i // 3) + 1
+            break
+
+        protein += amino_acid
+
+    return protein, stop_position
 
 
 def normalize_id(value):
-    """Allow IDs with or without their version suffix."""
     return str(value or "").split(".")[0]
 
 
+# --------------------------------------------------
+# Load validated transcripts
+# --------------------------------------------------
+
+validated_ids = []
+
+with open(VALIDATION_FILE, "r", newline="", encoding="utf-8-sig") as file:
+    reader = csv.DictReader(file)
+
+    for row in reader:
+        if row["match"].lower() == "true":
+            validated_ids.append(row["canonical_transcript_id"])
+
+
+selected_ids = set(validated_ids[:10] + validated_ids[-10:])
+
+print(f"Validated transcripts: {len(validated_ids)}")
+print(f"Target sample size: {len(selected_ids)}")
+
+
+# --------------------------------------------------
+# Load gene data
+# --------------------------------------------------
+
+selected_genes = []
+
+with open(GENES_FILE, "r", newline="", encoding="utf-8-sig") as file:
+    reader = csv.DictReader(file)
+
+    for row in reader:
+        if row["canonical_transcript_id"] in selected_ids:
+            selected_genes.append(row)
+
+print(f"Gene rows selected: {len(selected_genes)}")
+
+
+# --------------------------------------------------
+# Read GTF exon and CDS annotations
+# --------------------------------------------------
+
 def read_gtf():
-    """Collect CDS coordinates for each transcript."""
     transcripts = {}
 
-    # The GTF file is gzip-compressed, despite its .gtf extension.
+    # This file is gzip-compressed even though its extension is .gtf.
     with gzip.open(GTF_FILE, "rt", encoding="utf-8") as file:
         for line in file:
             if line.startswith("#"):
@@ -59,7 +122,12 @@ def read_gtf():
 
             fields = line.rstrip("\n").split("\t")
 
-            if len(fields) != 9 or fields[2] != "CDS":
+            if len(fields) != 9:
+                continue
+
+            feature = fields[2]
+
+            if feature not in ("exon", "CDS"):
                 continue
 
             chromosome = fields[0]
@@ -68,13 +136,16 @@ def read_gtf():
             strand = fields[6]
 
             attributes = {}
+
             for item in fields[8].strip().split(";"):
                 item = item.strip()
+
                 if " " in item:
                     key, value = item.split(" ", 1)
                     attributes[key] = value.strip().strip('"')
 
             transcript_id = attributes.get("transcript_id")
+
             if not transcript_id:
                 continue
 
@@ -84,309 +155,320 @@ def read_gtf():
                     "gene_name": attributes.get("gene_name", ""),
                     "chromosome": chromosome,
                     "strand": strand,
-                    "start": start,
-                    "end": end,
+                    "exons": [],
+                    "cds": []
                 }
+
+            if feature == "exon":
+                transcripts[transcript_id]["exons"].append(
+                    (start, end)
+                )
             else:
-                transcripts[transcript_id]["start"] = min(
-                    transcripts[transcript_id]["start"], start
+                transcripts[transcript_id]["cds"].append(
+                    (start, end)
                 )
-                transcripts[transcript_id]["end"] = max(
-                    transcripts[transcript_id]["end"], end
-                )
+
+    for info in transcripts.values():
+        info["exons"] = sorted(
+            set(info["exons"]),
+            reverse=(info["strand"] == "-")
+        )
+
+        info["cds"] = sorted(set(info["cds"]))
 
     return transcripts
 
 
-def find_transcript(row, transcripts, columns):
-    """Match a CSV gene to its canonical transcript when available."""
-    gene_col = find_column(
-        columns, ["gene_name", "gene_symbol", "gene", "external_gene_name"]
-    )
-    gene_id_col = find_column(columns, ["gene_id", "ensembl_gene_id"])
-    transcript_col = find_column(
-        columns,
-        [
-            "canonical_transcript_id",
-            "canonical_transcript",
-            "transcript_id",
-        ],
-    )
+# --------------------------------------------------
+# Reconstruct transcript with only the first intron
+# --------------------------------------------------
 
-    transcript_id = row.get(transcript_col, "") if transcript_col else ""
-    gene_name = row.get(gene_col, "") if gene_col else ""
-    gene_id = row.get(gene_id_col, "") if gene_id_col else ""
-
-    # Prefer the canonical transcript if the CSV contains it.
-    if transcript_id:
-        for tid, info in transcripts.items():
-            if normalize_id(tid) == normalize_id(transcript_id):
-                return tid, info
-
-    # Otherwise match by gene name or gene ID.
-    matches = []
-    for tid, info in transcripts.items():
-        name_match = (
-            gene_name
-            and info["gene_name"].upper() == gene_name.upper()
-        )
-        id_match = (
-            gene_id
-            and normalize_id(info["gene_id"]) == normalize_id(gene_id)
-        )
-
-        if name_match or id_match:
-            matches.append((tid, info))
-
-    if not matches:
-        return None, None
-
-    # If there are multiple transcripts, use the longest genomic span.
-    return max(
-        matches,
-        key=lambda item: item[1]["end"] - item[1]["start"]
-    )
-
-
-def get_intron_retained_sequence(info, genome):
-    """
-    Extract the full genomic span of the coding region.
-
-    Unlike the normal CDS, this includes the introns between
-    the coding exons.
-    """
+def reconstruct_transcript(info, genome):
     chromosome = info["chromosome"]
 
-    # Handle FASTA headers that use either "1" or "chr1".
-    candidates = [
+    possible_names = [
         chromosome,
         "chr" + chromosome,
-        chromosome.removeprefix("chr"),
+        chromosome.removeprefix("chr")
     ]
 
     fasta_name = next(
-        (name for name in candidates if name in genome),
+        (name for name in possible_names if name in genome),
         None
     )
 
     if fasta_name is None:
-        raise KeyError(
-            f"Chromosome {chromosome} was not found in the genome FASTA."
-        )
+        return None
 
-    start = info["start"]
-    end = info["end"]
+    exons = info["exons"]
+    strand = info["strand"]
 
-    # GTF coordinates start at 1; Python sequence slices start at 0.
-    sequence = str(genome[fasta_name].seq[start - 1:end]).upper()
+    if len(exons) < 2 or not info["cds"]:
+        return None
 
-    # Put the sequence in the direction of transcription.
-    if info["strand"] == "-":
-        sequence = str(Seq(sequence).reverse_complement())
+    pieces = []
+    genomic_to_transcript = {}
+    transcript_position = 0
+    first_intron_length = 0
 
-    return sequence
+    for i, (start, end) in enumerate(exons):
 
+        genomic_sequence = str(
+            genome[fasta_name].seq[start - 1:end]
+        ).upper()
 
-def translate_sequence(sequence):
-    """Translate complete codons and preserve stop codons."""
-    complete_length = len(sequence) - (len(sequence) % 3)
-
-    if complete_length == 0:
-        return ""
-
-    return str(
-        Seq(sequence[:complete_length]).translate(to_stop=False)
-    )
-
-
-def analyze_mutation(sequence, deletion_size):
-    """Delete bases, translate, and measure the predicted outcome."""
-    mutation_position = len(sequence) // 2
-
-    # Delete one or two bases near the middle of the sequence.
-    mutated_sequence = (
-        sequence[:mutation_position]
-        + sequence[mutation_position + deletion_size:]
-    )
-
-    protein = translate_sequence(mutated_sequence)
-
-    first_stop = protein.find("*")
-    premature_stop = (
-        first_stop != -1 and first_stop < len(protein) - 1
-    )
-
-    if first_stop != -1:
-        mutated_protein_length = first_stop
-        stop_base_position = first_stop * 3
-        search_start = stop_base_position + 3
-    else:
-        mutated_protein_length = len(protein)
-        search_start = mutation_position
-
-    # Find the next ATG downstream of the premature stop.
-    atg_position = mutated_sequence.find("ATG", search_start)
-
-    if atg_position != -1:
-        candidate_protein = translate_sequence(
-            mutated_sequence[atg_position:]
-        )
-        candidate_stop = candidate_protein.find("*")
-
-        if candidate_stop != -1:
-            candidate_length = candidate_stop
-        else:
-            candidate_length = len(candidate_protein)
-
-        distance_to_atg = atg_position - search_start
-    else:
-        candidate_length = 0
-        distance_to_atg = ""
-
-    return {
-        "mutation_position": mutation_position,
-        "mutated_sequence_length": len(mutated_sequence),
-        "mutated_protein_length": mutated_protein_length,
-        "premature_stop": premature_stop,
-        "downstream_atg_found": atg_position != -1,
-        "distance_to_downstream_atg": distance_to_atg,
-        "candidate_protein_length": candidate_length,
-    }
-
-
-def main():
-    if not GENE_CSV.exists():
-        raise FileNotFoundError(f"Missing file: {GENE_CSV}")
-
-    if not GTF_FILE.exists():
-        raise FileNotFoundError(f"Missing file: {GTF_FILE}")
-
-    if not GENOME_FILE.exists():
-        raise FileNotFoundError(f"Missing file: {GENOME_FILE}")
-
-    transcripts = read_gtf()
-    print(f"Transcripts with CDS annotations: {len(transcripts)}")
-
-    with open(GENE_CSV, "r", newline="", encoding="utf-8-sig") as file:
-        reader = csv.DictReader(file)
-        columns = reader.fieldnames
-        rows = list(reader)
-
-    if not columns:
-        raise ValueError("The gene CSV has no column headers.")
-
-    # Index the BGZF-compressed genome without loading the whole
-    # human genome into memory.
-    genome = SeqIO.index(str(GENOME_FILE), "fasta")
-
-    results = []
-    used_genes = set()
-
-    try:
-        for row in rows:
-            transcript_id, info = find_transcript(
-                row, transcripts, columns
+        if strand == "-":
+            exon_sequence = str(
+                Seq(genomic_sequence).reverse_complement()
             )
+            positions = range(end, start - 1, -1)
+        else:
+            exon_sequence = genomic_sequence
+            positions = range(start, end + 1)
 
-            if info is None:
-                continue
+        pieces.append(exon_sequence)
 
-            gene_name = info["gene_name"] or info["gene_id"] or transcript_id
+        for genomic_position in positions:
+            genomic_to_transcript[genomic_position] = (
+                transcript_position
+            )
+            transcript_position += 1
 
-            if gene_name in used_genes:
-                continue
+        # Insert the first intron only.
+        if i == 0:
+            next_start, next_end = exons[1]
 
-            sequence = get_intron_retained_sequence(info, genome)
+            if strand == "+":
+                intron_start = end + 1
+                intron_end = next_start - 1
+            else:
+                intron_start = next_end + 1
+                intron_end = start - 1
 
-            if len(sequence) < 6:
-                continue
+            if intron_start > intron_end:
+                return None
 
-            used_genes.add(gene_name)
+            intron_sequence = str(
+                genome[fasta_name].seq[
+                    intron_start - 1:intron_end
+                ]
+            ).upper()
 
-            for deletion_size in DELETION_SIZES:
-                result = analyze_mutation(sequence, deletion_size)
+            if strand == "-":
+                intron_sequence = str(
+                    Seq(intron_sequence).reverse_complement()
+                )
 
-                results.append({
-                    "gene_name": gene_name,
-                    "transcript_id": transcript_id,
-                    "model": "intron_retained",
-                    "frameshift": f"+{deletion_size}",
-                    "retained_sequence_length": len(sequence),
-                    **result,
-                })
+            pieces.append(intron_sequence)
 
-            if len(used_genes) >= TEST_LIMIT:
-                break
+            first_intron_length = len(intron_sequence)
+            transcript_position += first_intron_length
 
-    finally:
-        genome.close()
+    reconstructed = "".join(pieces)
 
-    if not results:
-        raise ValueError(
-            "No genes were matched. Check the CSV column names, "
-            "GTF transcript IDs, and genome FASTA chromosome names."
+    # Locate the original CDS start and end.
+    if strand == "+":
+        cds_start_genomic = min(
+            start for start, end in info["cds"]
+        )
+        cds_end_genomic = max(
+            end for start, end in info["cds"]
+        )
+    else:
+        cds_start_genomic = max(
+            end for start, end in info["cds"]
+        )
+        cds_end_genomic = min(
+            start for start, end in info["cds"]
         )
 
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if (
+        cds_start_genomic not in genomic_to_transcript
+        or cds_end_genomic not in genomic_to_transcript
+    ):
+        return None
 
-    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=results[0].keys())
-        writer.writeheader()
-        writer.writerows(results)
+    cds_start = genomic_to_transcript[cds_start_genomic]
+    cds_end = genomic_to_transcript[cds_end_genomic]
 
-    print(f"\nGenes tested: {len(used_genes)}")
-    print(f"Total model outputs: {len(results)}")
+    retained_cds = reconstructed[cds_start:cds_end + 1]
 
-    for deletion_size in DELETION_SIZES:
-        subset = [
-            row for row in results
-            if row["frameshift"] == f"+{deletion_size}"
+    # Check whether the retained intron overlaps the coding span.
+    intron_in_cds = (
+        len(retained_cds) != 0
+        and len(retained_cds)
+        != sum(end - start + 1 for start, end in info["cds"])
+    )
+
+    return retained_cds, first_intron_length, intron_in_cds
+
+
+# --------------------------------------------------
+# Run model
+# --------------------------------------------------
+
+print("Reading GTF...")
+transcripts = read_gtf()
+
+print("Indexing genome FASTA...")
+genome = SeqIO.index(str(GENOME_FILE), "fasta")
+
+results = []
+skipped = 0
+used_transcripts = set()
+
+try:
+    for row in selected_genes:
+
+        transcript_id = row["canonical_transcript_id"]
+
+        # Match transcript IDs even if their version suffix differs.
+        matches = [
+            (tid, info)
+            for tid, info in transcripts.items()
+            if normalize_id(tid) == normalize_id(transcript_id)
         ]
 
-        if not subset:
+        if not matches:
+            skipped += 1
             continue
 
-        print(f"\nFrameshift +{deletion_size}")
-        print(
-            "Average mutated protein length:",
-            round(
-                sum(r["mutated_protein_length"] for r in subset)
-                / len(subset), 1
-            ),
-        )
-        print(
-            "Premature stops:",
-            f"{sum(r['premature_stop'] for r in subset)}/{len(subset)}",
-        )
-        print(
-            "Downstream ATG found:",
-            f"{sum(r['downstream_atg_found'] for r in subset)}/{len(subset)}",
-        )
+        gtf_transcript_id, info = matches[0]
 
-        distances = [
-            r["distance_to_downstream_atg"]
-            for r in subset
-            if r["distance_to_downstream_atg"] != ""
-        ]
+        if gtf_transcript_id in used_transcripts:
+            continue
 
-        if distances:
-            print(
-                "Average distance to downstream ATG:",
-                round(sum(distances) / len(distances), 1),
-                "bases",
+        reconstructed = reconstruct_transcript(info, genome)
+
+        if reconstructed is None:
+            skipped += 1
+            continue
+
+        retained_cds, intron_length, intron_in_cds = reconstructed
+
+        if intron_length == 0 or len(retained_cds) < 6:
+            skipped += 1
+            continue
+
+        # Ensure the extracted sequence corresponds to the expected
+        # annotated CDS when the retained intron is outside the CDS.
+        original_cds = row["cds_sequence"].upper()
+
+        used_transcripts.add(gtf_transcript_id)
+
+        mutation_position = len(retained_cds) // 2
+
+        if mutation_position < 3:
+            mutation_position = 3
+
+        reference_protein = row["protein_sequence"].rstrip("*")
+
+        baseline_protein, baseline_stop = translate(retained_cds)
+
+        for deletion_size in DELETION_SIZES:
+
+            mutated_cds = (
+                retained_cds[:mutation_position]
+                + retained_cds[mutation_position + deletion_size:]
             )
 
-        print(
-            "Average candidate protein length:",
-            round(
-                sum(r["candidate_protein_length"] for r in subset)
-                / len(subset), 1
-            ),
-            "amino acids",
-        )
+            mutated_protein, stop_position = translate(mutated_cds)
 
-    print(f"\nSaved to {OUTPUT_FILE}")
+            # A stop is considered premature when it occurs before
+            # the normal protein's terminal position.
+            premature_stop = (
+                stop_position is not None
+                and stop_position <= len(reference_protein)
+            )
 
 
-if __name__ == "__main__":
-    main()
+            downstream_atg = mutated_cds.find("ATG", mutation_position)
+
+            downstream_atg_found = downstream_atg != -1
+
+            if downstream_atg_found:
+                downstream_atg_distance = downstream_atg - mutation_position
+                candidate_protein, candidate_stop = translate(
+                    mutated_cds[downstream_atg:]
+                )
+                candidate_protein_length = len(candidate_protein)
+            else:
+                downstream_atg_distance = None
+                candidate_protein_length = None
+
+            # Find the first amino acid that differs from the reference.
+            first_difference = None
+
+            for i, (original_aa, mutated_aa) in enumerate(
+                zip(reference_protein, mutated_protein)
+            ):
+                if original_aa != mutated_aa:
+                    first_difference = i + 1
+                    break
+
+            if first_difference is None and (
+                len(reference_protein) != len(mutated_protein)
+            ):
+                first_difference = min(
+                    len(reference_protein),
+                    len(mutated_protein)
+                ) + 1
+
+            results.append({
+                "gene_id": info["gene_id"],
+                "gene_name": info["gene_name"],
+                "transcript_id": gtf_transcript_id,
+                "strand": info["strand"],
+                "first_intron_length": intron_length,
+                "first_intron_in_cds": intron_in_cds,
+                "retained_cds_length": len(retained_cds),
+                "deletion_size": deletion_size,
+                "mutation_position": mutation_position,
+                "reference_protein_length": len(reference_protein),
+                "baseline_protein_length": len(baseline_protein),
+                "mutated_protein_length": len(mutated_protein),
+                "stop_position": stop_position,
+                "premature_stop": premature_stop,
+                "downstream_atg_found": downstream_atg_found,
+                "downstream_atg_distance": downstream_atg_distance,
+                "candidate_protein_length": candidate_protein_length,
+                "first_difference_position": first_difference
+            })
+
+except Exception as error:
+    print(f"An error occurred while running the model: {error}")
+
+finally:
+    genome.close()
+
+# Save the results.
+fieldnames = [
+    "gene_id",
+    "gene_name",
+    "transcript_id",
+    "strand",
+    "first_intron_length",
+    "first_intron_in_cds",
+    "retained_cds_length",
+    "deletion_size",
+    "mutation_position",
+    "reference_protein_length",
+    "baseline_protein_length",
+    "mutated_protein_length",
+    "stop_position",
+    "premature_stop",
+    "downstream_atg_found",
+    "downstream_atg_distance",
+    "candidate_protein_length",
+    "first_difference_position"
+]
+
+with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as file:
+    writer = csv.DictWriter(file, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(results)
+
+print(f"\nGenes tested: {len(used_transcripts)}")
+print(f"Results generated: {len(results)}")
+print(f"Transcripts skipped: {skipped}")
+print(f"Results saved to: {OUTPUT_FILE}")
