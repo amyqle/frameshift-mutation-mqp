@@ -63,3 +63,41 @@ difference = plus2 - plus1
 print("\nDifference (+2 - +1):")
 print("Mean difference:", difference.mean())
 print("Median difference:", difference.median())
+
+# Each wild-type comparison uses the matched positions in its own CSV.
+wildtype_results = pd.read_csv("data/frameshift_vs_wildtype.csv")
+wildtype_column = "wildtype_stop_position"
+p_values = {"+1 vs. +2": p_value}
+
+for frame, stop_column in (
+    ("+1", "plus1_first_stop_position"),
+    ("+2", "plus2_first_stop_position"),
+):
+    label = f"{frame} vs. wild type"
+    matched = wildtype_results.dropna(subset=[wildtype_column, stop_column])
+    differences = matched[stop_column] - matched[wildtype_column]
+
+    print(f"\n{label}")
+    print("Transcripts included:", len(matched))
+    print("Earlier stops:", (differences < 0).sum())
+    print("Same stop position:", (differences == 0).sum())
+    print("Later stops:", (differences > 0).sum())
+
+    if differences.empty or not differences.ne(0).any():
+        p_values[label] = None
+        continue
+
+    result = wilcoxon(differences, alternative="two-sided")
+    p_values[label] = result.pvalue
+    print("Wilcoxon statistic:", result.statistic)
+
+print("\nP-value summary")
+for label, comparison_p in p_values.items():
+    if comparison_p is None:
+        print(f"{label}: no nonzero paired differences to test")
+    elif comparison_p < 0.05:
+        print(f"{label}: p < 0.05 (statistically significant)")
+    elif comparison_p > 0.05:
+        print(f"{label}: p > 0.05 (not statistically significant)")
+    else:
+        print(f"{label}: p = 0.05 (does not meet p < 0.05)")
