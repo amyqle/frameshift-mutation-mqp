@@ -82,6 +82,9 @@ for frame, stop_column in (
     print("Earlier stops:", (differences < 0).sum())
     print("Same stop position:", (differences == 0).sum())
     print("Later stops:", (differences > 0).sum())
+    extensions = differences[differences > 0]
+    if not extensions.empty:
+        print(f"Average extension beyond wild type: {extensions.mean():.2f} aa")
 
     if differences.empty or not differences.ne(0).any():
         p_values[label] = None
