@@ -6,8 +6,9 @@ DATA = ROOT / "data"
 
 INPUT = DATA / "frameshift_biology_candidates.csv"
 
-OUTPUT_CSV = DATA / "interproscan_candidates_over100aa.csv"
-OUTPUT_FASTA = DATA / "interproscan_candidates_over100aa.fasta"
+MIN_LENGTH_AA = 50
+OUTPUT_CSV = DATA / f"interproscan_candidates_over{MIN_LENGTH_AA}aa.csv"
+OUTPUT_FASTA = DATA / f"interproscan_candidates_over{MIN_LENGTH_AA}aa.fasta"
 
 
 # --------------------------------------------------
@@ -18,11 +19,11 @@ df = pd.read_csv(INPUT)
 
 
 # --------------------------------------------------
-# Filter for proteins > 100 amino acids
+# Filter by protein length
 # --------------------------------------------------
 
 filtered = df[
-    df["frameshift_protein_length"] > 100
+    df["frameshift_protein_length"] > MIN_LENGTH_AA
 ].copy()
 
 
@@ -99,7 +100,7 @@ print(
 )
 
 print(
-    "Candidates >100 aa:",
+    f"Candidates >{MIN_LENGTH_AA} aa:",
     len(filtered)
 )
 
